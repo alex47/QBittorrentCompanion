@@ -70,7 +70,7 @@ static void AddTorrent(string magnetLink)
             new KeyValuePair<string, string>("password", "admin")
     ]);
 
-    httpClient.PostAsync(BaseUrl + "auth/login", loginData).Wait();
+    httpClient.PostAsync($"{BaseUrl}auth/login", loginData).Wait();
 
     var addData = new FormUrlEncodedContent([new KeyValuePair<string, string>("urls", magnetLink)]);
     httpClient.PostAsync($"{BaseUrl}torrents/add", addData).Wait();
