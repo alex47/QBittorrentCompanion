@@ -1,6 +1,19 @@
-﻿RegisterMagnetProtocol();
-string magnetLink = GetMagnetLinkFromArgs(args);
-await AddTorrentAsync(magnetLink);
+﻿try
+{
+    RegisterMagnetProtocol();
+
+    string magnetLink = GetMagnetLinkFromArgs(args);
+
+    AddTorrent(magnetLink);
+
+    string torrentName = ExtractNameFromMagnetLink(magnetLink);
+    ShowToastNotification("Torrent added", torrentName);
+}
+catch (Exception ex)
+{
+    ShowToastNotification("Error", ex.Message);
+}
+
 
 
 static void RegisterMagnetProtocol()
@@ -44,7 +57,7 @@ static string GetMagnetLinkFromArgs(string[] args)
     return magnetLink;
 }
 
-static async Task AddTorrentAsync(string magnetLink)
+static void AddTorrent(string magnetLink)
 {
     const string BaseUrl = "http://192.168.0.11:8081/api/v2/";
 
@@ -57,8 +70,30 @@ static async Task AddTorrentAsync(string magnetLink)
             new KeyValuePair<string, string>("password", "admin")
     ]);
 
-    await httpClient.PostAsync(BaseUrl + "auth/login", loginData);
+    httpClient.PostAsync(BaseUrl + "auth/login", loginData).Wait();
 
     var addData = new FormUrlEncodedContent([new KeyValuePair<string, string>("urls", magnetLink)]);
-    await httpClient.PostAsync($"{BaseUrl}torrents/add", addData);
+    httpClient.PostAsync($"{BaseUrl}torrents/add", addData).Wait();
+}
+
+static void ShowToastNotification(string title, string message)
+{
+    string logoFilePath = Path.Combine(AppContext.BaseDirectory, "Resources", "qbittorrent_logo.png");
+
+    new Microsoft.Toolkit.Uwp.Notifications.ToastContentBuilder()
+        .AddAppLogoOverride(new Uri(logoFilePath))
+        .AddText(title)
+        .AddText(message)
+        .Show();
+}
+
+static string ExtractNameFromMagnetLink(string magnetLink)
+{
+    var uri = new Uri(magnetLink);
+    string query = uri.Query;
+
+    var parameters = System.Web.HttpUtility.ParseQueryString(query);
+    string? name = parameters["dn"];
+
+    return name is null ? "Could not extract name" : System.Web.HttpUtility.UrlDecode(name);
 }
