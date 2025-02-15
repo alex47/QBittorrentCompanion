@@ -59,21 +59,21 @@ static string GetMagnetLinkFromArgs(string[] args)
 
 static void AddTorrent(string magnetLink)
 {
-    const string BaseUrl = "http://192.168.0.11:8081/api/v2/";
+    var qBittorrentConfig = TorrentUrlProtocolHelper.Configuration.QBittorrentConfig;
 
     HttpClientHandler httpClientHandler = new() { CookieContainer = new System.Net.CookieContainer() }; ;
     HttpClient httpClient = new(httpClientHandler);
 
     var loginData = new FormUrlEncodedContent(
     [
-        new KeyValuePair<string, string>("username", "admin"),
-            new KeyValuePair<string, string>("password", "admin")
+        new KeyValuePair<string, string>("username", qBittorrentConfig.Username),
+        new KeyValuePair<string, string>("password", qBittorrentConfig.Password)
     ]);
 
-    httpClient.PostAsync($"{BaseUrl}auth/login", loginData).Wait();
+    httpClient.PostAsync($"{qBittorrentConfig.BaseUrl}auth/login", loginData).Wait();
 
     var addData = new FormUrlEncodedContent([new KeyValuePair<string, string>("urls", magnetLink)]);
-    httpClient.PostAsync($"{BaseUrl}torrents/add", addData).Wait();
+    httpClient.PostAsync($"{qBittorrentConfig.BaseUrl}torrents/add", addData).Wait();
 }
 
 static void ShowToastNotification(string title, string message)
