@@ -1,4 +1,4 @@
-﻿namespace TorrentUrlProtocolHelper;
+﻿namespace QBittorrentCompanion;
 
 public class QBittorrentConfig
 {

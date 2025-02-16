@@ -1,4 +1,4 @@
-﻿using TorrentUrlProtocolHelper;
+﻿using QBittorrentCompanion;
 
 internal class Program
 {
