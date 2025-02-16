@@ -1,1 +1,1 @@
-# TorrentUrlProtocolHelper
+# QBittorrentCompanion
