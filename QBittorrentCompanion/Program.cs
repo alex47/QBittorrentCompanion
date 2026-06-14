@@ -2,156 +2,136 @@
 
 internal class Program
 {
+    internal const string OptionAddTorrentMagnetLink = "-addtorrentmagnetlink";
+    internal const string OptionAddTorrentFile = "-addtorrentfile";
+    internal const string OptionRegister = "-register";
+
+    private const string UsageInfo = """
+        Usage:
+        -register: Register the magnet protocol and torrent file association to use this application.
+        -addtorrentmagnetlink <magnet_link>: Add a torrent using the magnet link.
+        -addtorrentfile <torrent_file_path>: Add a torrent using the torrent file.
+        <magnet_link>: Add a torrent using the magnet link.
+        <torrent_file_path>: Add a torrent using the torrent file.
+        """;
+
     private enum OperationMode
     {
         Unknown,
         AddTorrentMagnetLink,
         AddTorrentFile,
-        RegisterMagnetProtocol,
+        RegisterHandlers,
     }
 
-    private const string OptionAddTorrentMagnetLink = "-addtorrentmagnetlink";
-    private const string OptionAddTorrentFile = "-addtorrentfile";
-    private const string OptionRegister = "-register";
+    private readonly record struct ParsedOperation(OperationMode Mode, string? Value);
 
     private static void Main(string[] args)
     {
+        IPlatformIntegration platformIntegration = PlatformIntegrationFactory.Create();
 
         try
         {
-            var operationMode = GetOperationModeFromArgs(args);
-            string torrentName = string.Empty;
+            ParsedOperation operation = GetOperationFromArgs(args);
 
-            switch (operationMode)
+            switch (operation.Mode)
             {
                 case OperationMode.AddTorrentMagnetLink:
-                    torrentName = TorrentHandler.AddMagnetLink(args[1]);
-                    ShowToastNotification("Torrent added", torrentName);
+                    string magnetTorrentName = TorrentHandler.AddMagnetLink(operation.Value!);
+                    platformIntegration.ShowNotification("Torrent added", magnetTorrentName);
                     break;
 
                 case OperationMode.AddTorrentFile:
-                    torrentName = TorrentHandler.AddTorrentFile(args[1]);
-                    ShowToastNotification("Torrent added", torrentName);
+                    string fileTorrentName = TorrentHandler.AddTorrentFile(operation.Value!);
+                    platformIntegration.ShowNotification("Torrent added", fileTorrentName);
                     break;
 
-                case OperationMode.RegisterMagnetProtocol:
-                    RegisterTorrentMagnetLinkProtocol();
-                    RegisterTorrentFileAssociation();
-                    ShowToastNotification("Registration", "Registration complete.");
+                case OperationMode.RegisterHandlers:
+                    platformIntegration.RegisterHandlers();
+                    platformIntegration.ShowNotification("Registration", "Registration complete.");
                     break;
 
                 default:
-                    ShowUsageInfo();
+                    platformIntegration.ShowUsage(UsageInfo);
                     break;
             }
         }
         catch (Exception ex)
         {
-            ShowToastNotification("Error", ex.Message);
+            platformIntegration.ShowNotification("Error", ex.Message);
         }
     }
 
-    private static OperationMode GetOperationModeFromArgs(string[] args)
+    private static ParsedOperation GetOperationFromArgs(string[] args)
     {
-        if (args.Length == 1 && args[0] == OptionRegister)
+        if (args.Length == 1 && string.Equals(args[0], OptionRegister, StringComparison.OrdinalIgnoreCase))
         {
-            return OperationMode.RegisterMagnetProtocol;
+            return new ParsedOperation(OperationMode.RegisterHandlers, null);
         }
 
-        if (args.Length == 2 && args[0] == OptionAddTorrentMagnetLink)
+        if (args.Length == 2 && string.Equals(args[0], OptionAddTorrentMagnetLink, StringComparison.OrdinalIgnoreCase))
         {
-            return OperationMode.AddTorrentMagnetLink;
+            return new ParsedOperation(OperationMode.AddTorrentMagnetLink, args[1]);
         }
 
-        if (args.Length == 2 && args[0] == OptionAddTorrentFile)
+        if (args.Length == 2 && string.Equals(args[0], OptionAddTorrentFile, StringComparison.OrdinalIgnoreCase))
         {
-            return OperationMode.AddTorrentFile;
+            return new ParsedOperation(OperationMode.AddTorrentFile, NormalizeTorrentFileArgument(args[1]));
         }
 
-        return OperationMode.Unknown;
+        if (args.Length == 1)
+        {
+            if (IsMagnetLink(args[0]))
+            {
+                return new ParsedOperation(OperationMode.AddTorrentMagnetLink, args[0]);
+            }
+
+            if (TryNormalizeTorrentFileArgument(args[0], out string? torrentFilePath))
+            {
+                return new ParsedOperation(OperationMode.AddTorrentFile, torrentFilePath);
+            }
+        }
+
+        return new ParsedOperation(OperationMode.Unknown, null);
     }
 
-    private static void RegisterTorrentMagnetLinkProtocol()
+    private static bool IsMagnetLink(string value) =>
+        value.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeTorrentFileArgument(string value)
     {
-        const string keyPath = $@"Software\Classes\magnet";
-
-        // Delete the key if it already exists
-        try
+        if (TryNormalizeTorrentFileArgument(value, out string? torrentFilePath) && torrentFilePath is not null)
         {
-            Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(keyPath);
+            return torrentFilePath;
         }
-        catch { /* Ignore if not exists */ }
 
-        // Create the key
-        using var newKey = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(keyPath);
-
-        newKey.SetValue("", "URL:Magnet Protocol");
-        newKey.SetValue("URL Protocol", "");
-
-        using var registryKeyShell = newKey.CreateSubKey("shell");
-        using var registryKeyOpen = registryKeyShell.CreateSubKey("open");
-        using var registryKeyCommand = registryKeyOpen.CreateSubKey("command");
-
-        registryKeyCommand.SetValue("", $@"""{Environment.ProcessPath}"" {OptionAddTorrentMagnetLink} ""%1""");
+        return value;
     }
 
-    private static void RegisterTorrentFileAssociation()
+    private static bool TryNormalizeTorrentFileArgument(string value, out string? torrentFilePath)
     {
-        const string progId = "TorrentUrlProtocolHelper.TorrentFile";
+        if (Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) && uri.IsFile)
+        {
+            string localPath = uri.LocalPath;
+            if (HasTorrentExtension(localPath))
+            {
+                torrentFilePath = localPath;
+                return true;
+            }
 
-        try
-        {
-            Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree($@"Software\Classes\.torrent");
-        }
-        catch { /* Ignore if not exists */ }
-        try
-        {
-            Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree($@"Software\Classes\{progId}");
-        }
-        catch { /* Ignore if not exists */ }
-
-        using (var extKey = Microsoft.Win32.Registry.CurrentUser.CreateSubKey($@"Software\Classes\.torrent"))
-        {
-            extKey.SetValue("", progId);
+            torrentFilePath = null;
+            return false;
         }
 
-        using var progIdKey = Microsoft.Win32.Registry.CurrentUser.CreateSubKey($@"Software\Classes\{progId}");
-        progIdKey.SetValue("", "Torrent File");
-
-        // Optionally, set the default icon.
-        using (var defaultIconKey = progIdKey.CreateSubKey("DefaultIcon"))
+        if (HasTorrentExtension(value))
         {
-            defaultIconKey.SetValue("", $@"""{Environment.ProcessPath}"",0");
+            torrentFilePath = value;
+            return true;
         }
 
-        // Create the shell open command.
-        using var shellKey = progIdKey.CreateSubKey("shell");
-        using var openKey = shellKey.CreateSubKey("open");
-        using var commandKey = openKey.CreateSubKey("command");
-
-        commandKey.SetValue("", $@"""{Environment.ProcessPath}"" {OptionAddTorrentFile} ""%1""");
+        torrentFilePath = null;
+        return false;
     }
 
-    private static void ShowUsageInfo()
-    {
-        const string usageInfo = """
-            Usage:
-            -register: Register the magnet protocol to use this application.
-            -addtorrentmagnetlink <magnet_link>: Add a torrent using the magnet link.
-            -addtorrentfile <torrent_file_path>: Add a torrent using the torrent file.
-            """;
-
-        MessageBox.Show(usageInfo);
-    }
-
-    private static void ShowToastNotification(string title, string message)
-    {
-        string logoFilePath = Path.Combine(AppContext.BaseDirectory, "Resources", "qbittorrent_logo.png");
-
-        new Microsoft.Toolkit.Uwp.Notifications.ToastContentBuilder()
-            .AddAppLogoOverride(new Uri(logoFilePath))
-            .AddText(title)
-            .AddText(message)
-            .Show();
-    }
+    private static bool HasTorrentExtension(string value) =>
+        string.Equals(Path.GetExtension(value), ".torrent", StringComparison.OrdinalIgnoreCase);
 }

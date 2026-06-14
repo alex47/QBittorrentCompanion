@@ -25,49 +25,29 @@ internal class TorrentHandler
 
     private static void AddMagnetLinkOnWebApi(string magnetLink)
     {
-        var httpClientHandler = new HttpClientHandler() { CookieContainer = new System.Net.CookieContainer() }; ;
-        var httpClient = new HttpClient(httpClientHandler);
+        using var httpClientHandler = new HttpClientHandler() { CookieContainer = new System.Net.CookieContainer() };
+        using var httpClient = new HttpClient(httpClientHandler);
 
-        var loginData = new FormUrlEncodedContent(
-        [
-            new KeyValuePair<string, string>("username", Configuration.QBittorrentConfig.Username),
-            new KeyValuePair<string, string>("password", Configuration.QBittorrentConfig.Password)
-        ]);
+        Login(httpClient);
 
-        var loginResponse = httpClient.PostAsync($"{Configuration.QBittorrentConfig.BaseUrl}auth/login", loginData).Result;
-
-        if (loginResponse.IsSuccessStatusCode == false)
-        {
-            throw new Exception($"Login failed: {loginResponse.StatusCode}");
-        }
-
-        var addData = new FormUrlEncodedContent([new KeyValuePair<string, string>("urls", magnetLink)]);
-
-        var addResponse = httpClient.PostAsync($"{Configuration.QBittorrentConfig.BaseUrl}torrents/add", addData).Result;
+        using var addData = new FormUrlEncodedContent([new KeyValuePair<string, string>("urls", magnetLink)]);
+        using HttpResponseMessage addResponse = httpClient
+            .PostAsync(BuildApiUri("torrents/add"), addData)
+            .GetAwaiter()
+            .GetResult();
 
         if (addResponse.IsSuccessStatusCode == false)
         {
-            throw new Exception($"Adding torrent failed: {addResponse.StatusCode}");
+            throw new Exception($"Adding torrent failed: {addResponse.StatusCode} - {ReadResponseContent(addResponse)}");
         }
     }
 
     private static void AddTorrentFileOnWebApi(string filePath)
     {
-        var httpClientHandler = new HttpClientHandler() { CookieContainer = new System.Net.CookieContainer() };
-        var httpClient = new HttpClient(httpClientHandler);
+        using var httpClientHandler = new HttpClientHandler() { CookieContainer = new System.Net.CookieContainer() };
+        using var httpClient = new HttpClient(httpClientHandler);
 
-        var loginData = new FormUrlEncodedContent(
-        [
-            new KeyValuePair<string, string>("username", Configuration.QBittorrentConfig.Username),
-            new KeyValuePair<string, string>("password", Configuration.QBittorrentConfig.Password)
-        ]);
-
-        var loginResponse = httpClient.PostAsync($"{Configuration.QBittorrentConfig.BaseUrl}auth/login", loginData).Result;
-
-        if (loginResponse.IsSuccessStatusCode == false)
-        {
-            throw new Exception($"Login failed: {loginResponse.StatusCode}");
-        }
+        Login(httpClient);
 
         using var content = new MultipartFormDataContent();
 
@@ -78,14 +58,49 @@ internal class TorrentHandler
 
         content.Add(fileContent, "torrents", Path.GetFileName(filePath));
 
-        var addResponse = httpClient.PostAsync($"{Configuration.QBittorrentConfig.BaseUrl}torrents/add", content).Result;
+        using HttpResponseMessage addResponse = httpClient
+            .PostAsync(BuildApiUri("torrents/add"), content)
+            .GetAwaiter()
+            .GetResult();
 
         if (addResponse.IsSuccessStatusCode == false)
         {
-            string error = addResponse.Content.ReadAsStringAsync().Result;
-            throw new Exception($"Adding torrent failed: {addResponse.StatusCode} - {error}");
+            throw new Exception($"Adding torrent failed: {addResponse.StatusCode} - {ReadResponseContent(addResponse)}");
         }
     }
+
+    private static void Login(HttpClient httpClient)
+    {
+        using var loginData = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("username", Configuration.QBittorrentConfig.Username),
+            new KeyValuePair<string, string>("password", Configuration.QBittorrentConfig.Password)
+        ]);
+
+        using HttpResponseMessage loginResponse = httpClient
+            .PostAsync(BuildApiUri("auth/login"), loginData)
+            .GetAwaiter()
+            .GetResult();
+
+        if (loginResponse.IsSuccessStatusCode == false)
+        {
+            throw new Exception($"Login failed: {loginResponse.StatusCode} - {ReadResponseContent(loginResponse)}");
+        }
+    }
+
+    private static Uri BuildApiUri(string relativePath)
+    {
+        string baseUrl = Configuration.QBittorrentConfig.BaseUrl;
+        if (baseUrl.EndsWith('/') == false)
+        {
+            baseUrl += "/";
+        }
+
+        return new Uri(new Uri(baseUrl, UriKind.Absolute), relativePath);
+    }
+
+    private static string ReadResponseContent(HttpResponseMessage response) =>
+        response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
 
     private static string ExtractNameFromMagnetLink(string magnetLink)
     {
