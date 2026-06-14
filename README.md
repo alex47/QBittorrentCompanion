@@ -141,21 +141,3 @@ QBittorrentCompanion "magnet:?xt=..."
 QBittorrentCompanion "/path/to/file.torrent"
 QBittorrentCompanion "file:///path/to/file.torrent"
 ```
-
-## Troubleshooting
-
-`The SSL connection could not be established`
-
-The configured `BaseUrl` uses HTTPS, but the endpoint is not serving valid HTTPS to this machine. Check whether qBittorrent is actually using HTTPS on that host/port and whether the certificate is trusted.
-
-`Adding torrent failed: Forbidden`
-
-qBittorrent rejected the API request. Common causes are invalid credentials, Web UI host header validation, IP/subnet restrictions, or qBittorrent's failed-login ban settings.
-
-Linux registration says it must be run from the published executable
-
-Publish first, then run `-register` from the apphost in the publish directory. Linux registration stores the executable path in the `.desktop` file, so registering a temporary `dotnet run` path is intentionally blocked.
-
-No desktop notification appears on Linux
-
-Install or configure a notification provider that supports `notify-send`. The app falls back to console output when `notify-send` is unavailable.
